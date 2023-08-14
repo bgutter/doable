@@ -5,13 +5,28 @@
 ;; load tiny-routes
 
 (defpackage :doable
-  (:use :common-lisp :local-time :closer-mop :clack)
+  (:use :common-lisp :local-time :closer-mop :clack :ningle :cl-json :alexandria)
   (:export
    #:new-task
    #:backlog
    #:*task-list*))
 
 (in-package :doable)
+
+;; Instance IDing
+
+(defclass id-mixin ()
+  ((id
+    :initform (next-id)
+    :accessor id))
+  (:documentation "Unique ID for an instance within Doable."))
+
+(defvar id-counter 0)
+(defun next-id ()
+  (let
+      ((ret id-counter))
+    (setf id-counter (+ id-counter 1))
+    ret))
 
 ;; Task Status Representation
 
@@ -65,7 +80,7 @@
 
 ;; Task Representation
 
-(defclass task ()
+(defclass task (id-mixin)
   ((summary
     :documentation "Single line summary."
     :accessor task-summary
@@ -75,6 +90,7 @@
     :initform (local-time:now))
    (due-date
     :accessor when-due
+    :initarg :due
     :initform nil)
    (status
     :accessor task-status
@@ -253,24 +269,65 @@
 ;;   (cli-list-tasks (next) :title "Next")
 ;;   (reset-tasks))
 
-;; server
+(defvar *app* (make-instance 'ningle:<app>))
+;; (setf *app* (make-instance 'ningle:<app>))
 
-;; (defvar *api-handler*
-;;   (lambda (env)
-;;     '(200 (:content-type "application/json") ("{clack:\"up\"}"))))
+(defun respond-with-json (thing &key (encode-func #'json:encode-json))
 
-(tiny:define-routes *app*
-  (tiny:define-get "/" ()
-    (tiny:ok "aliv2e"))
-  ;;(tiny:define-get "/accounts/:account-id" (request)
-    ;;(let ((account-id (tiny:path-param request :account-id)))
-    ;;  (tiny:ok (format nil "Your account id: ~a." account-id))))
-  (tiny:define-get "/home" ()
-    (tiny:ok "Home"))
-  (tiny:define-get "/*" ()
-    (tiny:not-found "not-found")))
+  ;; Set response content-type
+  (setf (lack.response:response-headers ningle:*response*)
+        (append (lack.response:response-headers ningle:*response*)
+                (list :content-type "application/json")))
 
-(defvar *clack-instance* nil)
+  ;; Return JSON encoded string
+  (let
+      ((out-string (make-string-output-stream)))
+    (funcall encode-func thing out-string)
+    (get-output-stream-string out-string)))
+
+(defun api-add-route-definitions ()
+  (setf (ningle:route *app* "/")
+        "Welcome to ningle two!")
+
+  ;; Get task by ID
+  (setf (ningle:route *app* "/task/:task-id" :method :GET)
+        #'(lambda (params)
+            "Retrieve a task by task ID."
+            (let ((task (find (parse-integer (cdr (assoc :task-id params)))
+                              *task-list*
+                              :key #'id)))
+              (respond-with-json task))))
+
+  ;; Create task by ID
+  (setf (ningle:route *app* "/task" :method :POST)
+        #'(lambda (params)
+            "Create a task by task ID."
+            (let
+                ((task (apply #'new-task
+                              (alexandria:alist-plist
+                               (mapcar #'(lambda (pair)
+                                           (cons
+                                            (intern (string-upcase (car pair)) "KEYWORD")
+                                            (cdr pair)))
+                                       (car params))))))
+              (respond-with-json (list :id (id task))
+               :encode-func #'json:encode-json-plist))))
+
+  ;; Default case
+  (setf (ningle:route *app* "/*")
+        #'(lambda (params)
+            "Handle unknown paths."
+            (declare (ignore params))
+            (setf (lack.response:response-status ningle:*response*) 404)
+            "Object not found!"))
+
+  ;; (setf (ningle:route *app* "/login" :method :POST)
+  ;;       #'(lambda (params)
+  ;;           (if (authorize (cdr (assoc "username" params :test #'string=))
+  ;;                          (cdr (assoc "password" params :test #'string=)))
+  ;;               "Authorized!"
+  ;;               "Failed...Try again.")))
+  )
 
 (defun api-stop ()
   "Stop the REST server, if it is running."
@@ -279,10 +336,15 @@
     (setf *clack-instance* nil))
   (values))
 
-(defun api-start-or-restart ()
+(defun api-start-or-restart (&key (reset-routes nil))
   "Start the REST server. Restart it if running."
   (api-stop)
+  (when reset-routes
+    (ningle:clear-routing-rules *app*)
+    (api-add-route-definitions))
   (setf *clack-instance*
         (clack:clackup *app* :server :hunchentoot)))
 
-(api-start-or-restart)
+(api-start-or-restart :reset-routes t)
+
+(api-stop)
