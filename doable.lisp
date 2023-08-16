@@ -4,8 +4,10 @@
 
 ;; load tiny-routes
 
+(in-package :cl-user)
+
 (defpackage :doable
-  (:use :common-lisp :local-time :closer-mop :clack :ningle :cl-json :alexandria)
+  (:use :common-lisp :local-time :closer-mop :clack :ningle :cl-json :alexandria :cl-who :parenscript)
   (:export
    #:new-task
    #:backlog
@@ -285,9 +287,33 @@
     (funcall encode-func thing out-string)
     (get-output-stream-string out-string)))
 
+(setq cl-who:*attribute-quote-char* #\") ;; better way to do this?
+
 (defun api-add-route-definitions ()
-  (setf (ningle:route *app* "/")
-        "Welcome to ningle two!")
+
+  (let
+      ((cl-who:*attribute-quote-char* #\")) ;; dynamic binding? Need to ,in lambdas below perhaps
+
+    (setf (ningle:route *app* "/")
+          #'(lambda (parameters)
+              "Just serve the landing page."
+              (declare (ignore parameters))
+              (let
+                  ((x (make-string-output-stream)))
+                (who:with-html-output (x nil :prologue t)
+                  (:html
+                   (:head)
+                   (:body
+                    (:h1 "Doable")
+                    (:p "This is some text from Lisp.")
+                    (loop for task in *task-list*
+                          do (who:htm (:p (who:str (task-summary task)))))
+                    (:a :href "#"
+                        :onclick
+                        (parenscript:ps
+                          (alert "Hello World"))
+                        "Hello World"))))
+                (get-output-stream-string x))))
 
   ;; Get task by ID
   (setf (ningle:route *app* "/task/:task-id" :method :GET)
@@ -319,15 +345,9 @@
             "Handle unknown paths."
             (declare (ignore params))
             (setf (lack.response:response-status ningle:*response*) 404)
-            "Object not found!"))
+            "Object not found!"))))
 
-  ;; (setf (ningle:route *app* "/login" :method :POST)
-  ;;       #'(lambda (params)
-  ;;           (if (authorize (cdr (assoc "username" params :test #'string=))
-  ;;                          (cdr (assoc "password" params :test #'string=)))
-  ;;               "Authorized!"
-  ;;               "Failed...Try again.")))
-  )
+(defvar *clack-instance* nil)
 
 (defun api-stop ()
   "Stop the REST server, if it is running."
@@ -347,4 +367,4 @@
 
 (api-start-or-restart :reset-routes t)
 
-(api-stop)
+;; (api-stop)
