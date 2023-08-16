@@ -298,22 +298,7 @@
           #'(lambda (parameters)
               "Just serve the landing page."
               (declare (ignore parameters))
-              (let
-                  ((x (make-string-output-stream)))
-                (who:with-html-output (x nil :prologue t)
-                  (:html
-                   (:head)
-                   (:body
-                    (:h1 "Doable")
-                    (:p "This is some text from Lisp.")
-                    (loop for task in *task-list*
-                          do (who:htm (:p (who:str (task-summary task)))))
-                    (:a :href "#"
-                        :onclick
-                        (parenscript:ps
-                          (alert "Hello World"))
-                        "Hello World"))))
-                (get-output-stream-string x))))
+              (generate-spwa)))
 
   ;; Get task by ID
   (setf (ningle:route *app* "/task/:task-id" :method :GET)
@@ -366,5 +351,37 @@
         (clack:clackup *app* :server :hunchentoot)))
 
 (api-start-or-restart :reset-routes t)
+
+(defun generate-spwa ()
+  (let
+      ((x (make-string-output-stream)))
+    (who:with-html-output (x nil :prologue t)
+      (:html
+       (:head
+        (:style
+         (who:str (cl-css:css '(("li > p" :display inline))))))
+       (:body
+        (:h1 "Doable")
+        (:div :id "task-pane")
+        (:p "This is some text from Lisp.")
+        (loop for task in *task-list*
+              do (who:htm
+                  (:li
+                   (:button (who:str " X "))
+                   (:p (who:str (task-summary task)))
+                   (:p (who:str "test")))))
+        (:a :href "#"
+            :onclick
+            (parenscript:ps
+              (chain document
+                     (get-element-by-id "task-pane")
+                     (append-child
+                      (chain document (create-element "li"))))
+              (alert "Hello World"))
+            "Hello World")
+        (:script
+         (parenscript:ps
+           )))))
+    (get-output-stream-string x)))
 
 ;; (api-stop)
