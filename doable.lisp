@@ -358,8 +358,18 @@
     (who:with-html-output (x nil :prologue t)
       (:html
        (:head
+        (:script :type "text/javascript"
+         (who:str (parenscript:ps
+           (defun refresh-tasks ()
+             (parenscript:chain
+              (fetch "http://127.0.0.1:5000/task/1")
+              (then (lambda (response)
+                      (parenscript:chain console (log response))))))
+                    (refresh-tasks))))
         (:style
-         (who:str (cl-css:css '(("li > p" :display inline))))))
+         (who:str
+          (cl-css:css
+           '(("li > p" :display inline))))))
        (:body
         (:h1 "Doable")
         (:div :id "task-pane")
@@ -378,10 +388,7 @@
                      (append-child
                       (chain document (create-element "li"))))
               (alert "Hello World"))
-            "Hello World")
-        (:script
-         (parenscript:ps
-           )))))
+            "Hello World"))))
     (get-output-stream-string x)))
 
 ;; (api-stop)
