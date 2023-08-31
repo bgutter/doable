@@ -375,7 +375,7 @@
          (who:str (generate-style))))
        (:body
         (:div :id "container"
-              :style "width: 600px;height: 400px;top:50px;left:50px;"
+              :style "width: 100%;height: 100%;"
               (:div :id "elem"
                     :onmousedown "beginDivDragging(this,'container',event);"
                     :onmouseup "endDivDragging('container');"
@@ -432,8 +432,8 @@
            (diff-y (- pos-y div-top))
            (e-wi (parse-int (ps:chain divid style width)))
            (e-he (parse-int (ps:chain divid style height)))
-           (c-wi (parse-int (ps:chain document (get-element-by-id container-id) style width)))
-           (c-he (parse-int (ps:chain document (get-element-by-id container-id) style height))))
+           (c-wi (parse-int (ps:chain document (get-element-by-id container-id) offset-width)))
+           (c-he (parse-int (ps:chain document (get-element-by-id container-id) offset-height))))
         (ps:chain console (log "About to set drag event."))
         (ps:chain console (log "Element w,h:" e-wi e-he))
         (ps:chain console (log "Container w,h:" c-wi c-he))
@@ -471,7 +471,10 @@
 
 (defun generate-style ()
   (cl-css:css
-   '(("li > p"
+   '(("*"
+      :margin 0
+      :padding 0)
+     ("li > p"
       :display inline)
      ("#container"
       :position "absolute"
