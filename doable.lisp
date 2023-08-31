@@ -7,11 +7,10 @@
 (in-package :cl-user)
 
 (defpackage :doable
-  (:use :common-lisp :local-time :closer-mop :clack :ningle :cl-json :alexandria :cl-who :parenscript)
+  (:use :common-lisp)
   (:export
-   #:new-task
-   #:backlog
-   #:*task-list*))
+   #:api-start-or-restart
+   #:api-stop))
 
 (in-package :doable)
 
@@ -138,11 +137,25 @@
 
 (defun index-task (task)
   "Index a new task"
-  (push task *task-list*))
+  (push task *task-list*)
+  (persist-tasks)) ;; place this behind some logic down the road
 
 (defun reset-tasks ()
   "Testing and development only. Clear task list."
   (setf *task-list* nil))
+
+(defun persist-tasks (&key (path nil))
+  )
+  ;; (let
+  ;;     ((*print-readably* t)
+  ;;      (path (or path "~/.doable/tasks.lisp")))
+  ;;   (ensure-directories-exist path)
+  ;;   (with-open-file (fout path :direction :output)
+  ;;     (loop for task in *task-list*
+  ;;           collect
+  ;;           (with-slots () task
+  ;;             ()))
+  ;;     (format fout "~A" *task-list*))))
 
 ;; Task Mutation
 
@@ -350,8 +363,6 @@
   (setf *clack-instance*
         (clack:clackup *app* :server :hunchentoot)))
 
-(api-start-or-restart :reset-routes t)
-
 (defun generate-spwa ()
   (let
       ((x (make-string-output-stream)))
@@ -359,36 +370,116 @@
       (:html
        (:head
         (:script :type "text/javascript"
-         (who:str (parenscript:ps
-           (defun refresh-tasks ()
-             (parenscript:chain
-              (fetch "http://127.0.0.1:5000/task/1")
-              (then (lambda (response)
-                      (parenscript:chain console (log response))))))
-                    (refresh-tasks))))
+         (who:str (generate-js)))
         (:style
-         (who:str
-          (cl-css:css
-           '(("li > p" :display inline))))))
+         (who:str (generate-style))))
        (:body
-        (:h1 "Doable")
-        (:div :id "task-pane")
-        (:p "This is some text from Lisp.")
-        (loop for task in *task-list*
-              do (who:htm
-                  (:li
-                   (:button (who:str " X "))
-                   (:p (who:str (task-summary task)))
-                   (:p (who:str "test")))))
-        (:a :href "#"
-            :onclick
-            (parenscript:ps
-              (chain document
-                     (get-element-by-id "task-pane")
-                     (append-child
-                      (chain document (create-element "li"))))
-              (alert "Hello World"))
-            "Hello World"))))
+        (:div :id "container"
+              :style "width: 600px;height: 400px;top:50px;left:50px;"
+              (:div :id "elem"
+                    :onmousedown "beginDivDragging(this,'container',event);"
+                    :onmouseup "endDivDragging('container');"
+                    :style "width: 200px;height: 100px;"
+                    (:div :style "width:100%;height:100%;padding:10px"
+                          ))))))
+        ;; (:h1 "Doable")
+        ;; (:div :id "task-pane")
+        ;; (:p "This is some text from Lisp.")
+        ;; (loop for task in *task-list*
+        ;;       do (who:htm
+        ;;           (:li
+        ;;            (:button (who:str " X "))
+        ;;            (:p (who:str (task-summary task)))
+        ;;            (:p (who:str "test")))))
+        ;; (:a :href "#"
+        ;;     :onclick
+        ;;     (ps:ps
+        ;;       (ps:chain document
+        ;;              (get-element-by-id "task-pane")
+        ;;              (append-child
+        ;;               (ps:chain document (create-element "li"))))
+        ;;       (alert "Hello World"))
+        ;;     "Hello World"))))
     (get-output-stream-string x)))
 
+(defun generate-js ()
+  (ps:ps
+
+    (defun refresh-tasks ()
+      "Development: Fetch a single task"
+      (ps:chain
+       (fetch "http://127.0.0.1:5000/task/1")
+       (then (lambda (response)
+               (ps:chain response (json))))
+       (then (lambda (json)
+               (ps:chain console (log json))))))
+
+    (defun move-div (div new-xpos new-ypos)
+      (ps:chain console (log div new-xpos new-ypos))
+      (setf (ps:chain div style left) (concatenate 'string (ps:chain new-xpos (to-string)) "px"))
+      (setf (ps:chain div style top) (concatenate 'string (ps:chain new-ypos (to-string)) "px"))
+      (values))
+
+    (defun begin-div-dragging (divid container-id &optional evt)
+      "Modified from https://stackoverflow.com/questions/9334084/moveable-draggable-div"
+      (let*
+          ((evt (or evt (ps:chain window event)))
+           (pos-x (ps:chain evt client-x))
+           (pos-y (ps:chain evt client-y))
+           (div-top (ps:chain (ps:chain divid style top) (replace "px" "")))
+           (div-left (ps:chain (ps:chain divid style left) (replace "px" "")))
+           (diff-x (- pos-x div-left))
+           (diff-y (- pos-y div-top))
+           (e-wi (parse-int (ps:chain divid style width)))
+           (e-he (parse-int (ps:chain divid style height)))
+           (c-wi (parse-int (ps:chain document (get-element-by-id container-id) style width)))
+           (c-he (parse-int (ps:chain document (get-element-by-id container-id) style height))))
+        (ps:chain console (log "About to set drag event."))
+        (ps:chain console (log "Element w,h:" e-wi e-he))
+        (ps:chain console (log "Container w,h:" c-wi c-he))
+        (ps:chain console (log "Diffs: " diff-x diff-y))
+        (setf (ps:chain document (get-element-by-id container-id) style cursor) "move"
+              (ps:chain document onmousemove)
+              (lambda (evt)
+                (let*
+                    ((evt (or evt (ps:chain window event)))
+                     (pos-x (ps:chain evt client-x))
+                     (pos-y (ps:chain evt client-y))
+                     (a-x ( max 0 (- pos-x diff-x)))
+                     (a-y (max 0 (- pos-y diff-y))))
+                  (ps:chain console (log "Move Vars: " pos-x pos-y a-x a-y))
+                  (move-div divid
+                            (if (> (+ a-x e-wi) c-wi)
+                                (- c-wi e-wi)
+                                a-x)
+                            (if (> (+ a-y e-he) c-he)
+                                (- c-he e-he)
+                                a-y)))))))
+
+    (defun end-div-dragging (container-id)
+      (let
+          ((a (ps:chain document (create-element "script"))))
+        (setf (ps:chain document (get-element-by-id container-id) style cursor) "default"
+              (ps:chain document onmousemove) (lambda ()))))
+
+    (defun spawn-new-task-window ()
+      "Create a draggable div for making new tasks."
+      )
+
+    ;; (refresh-tasks)
+    ))
+
+(defun generate-style ()
+  (cl-css:css
+   '(("li > p"
+      :display inline)
+     ("#container"
+      :position "absolute"
+      :background-color "LightGray")
+     ("#elem"
+      :position "absolute"
+      :background-color "gray"
+      :user-select "none"))))
+
+;; (api-start-or-restart :reset-routes t)
 ;; (api-stop)
